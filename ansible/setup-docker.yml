@@ -18,16 +18,38 @@
           - rsync
         state: present
       become: yes
-
-    - name: Start Docker Daemon manually (Fix OverlayFS error)
-      shell: "dockerd --storage-driver=vfs > /var/log/dockerd.log 2>&1 &"
+    
+    - name: Force kill all Docker and Containerd processes
+      shell: "pkill -9 dockerd && pkill -9 containerd || true"
       become: yes
-      args:
-        creates: /var/log/dockerd.log
 
-    - name: Wait for Docker to initialize
-      pause:
-        seconds: 5
+    - name: Clean up stale Docker files and state
+    # This removes the "bad memory" of the previous crash
+      file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /var/run/docker.sock
+        - /var/run/docker.pid
+        - /var/run/containerd/containerd.sock
+      become: yes
+
+    - name: Start Docker with specific storage and no-iptables
+    # Adding --iptables=false helps in nested environments
+      shell: "dockerd --storage-driver=vfs --iptables=false > /var/log/dockerd.log 2>&1 &"
+      become: yes
+
+    - name: Wait for Docker socket
+      wait_for:
+        path: /var/run/docker.sock
+        state: present
+        timeout: 45
+
+    - name: Fix Docker socket permissions
+      file:
+        path: /var/run/docker.sock
+        mode: '0666'
+      become: yes
 
     - name: Create app directory
       file:
@@ -45,6 +67,7 @@
         group: linuxserver.io
         mode: '0755'
       become: yes
+      when: deploy_code | bool
 
     - name: Run the application
       shell: docker-compose up -d --build  # Added --build to ensure code updates
