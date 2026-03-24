@@ -1,0 +1,53 @@
+---
+- name: config docker on remote server (Alpine Linux)
+  hosts: server
+  gather_facts: no
+  tasks:
+    - name: Bootstrap Python on Alpine
+      raw: echo "root" | sudo -S apk add --no-cache python3
+      changed_when: true
+
+    - name: Now gather facts (Manual Trigger)
+      setup:
+
+    - name: Install Docker and Docker Compose and rsync
+      apk:
+        name: 
+          - docker
+          - docker-compose
+          - rsync
+        state: present
+      become: yes
+
+    - name: Start Docker Daemon manually (Fix OverlayFS error)
+      shell: "dockerd --storage-driver=vfs > /var/log/dockerd.log 2>&1 &"
+      become: yes
+      args:
+        creates: /var/log/dockerd.log
+
+    - name: Wait for Docker to initialize
+      pause:
+        seconds: 5
+
+    - name: Create app directory
+      file:
+        path: /home/linuxserver.io/todo-app
+        state: directory
+        owner: linuxserver.io
+        group: linuxserver.io
+      become: yes
+
+    - name: Copy entire project directory
+      copy:
+        src: "/Users/diogomartins/Desktop/Software-Engineer-RoadMap/DevOps/Multi-Container-Application/"
+        dest: /home/linuxserver.io/todo-app/
+        owner: linuxserver.io
+        group: linuxserver.io
+        mode: '0755'
+      become: yes
+
+    - name: Run the application
+      shell: docker-compose up -d --build  # Added --build to ensure code updates
+      args:
+        chdir: /home/linuxserver.io/todo-app
+      become: yes
